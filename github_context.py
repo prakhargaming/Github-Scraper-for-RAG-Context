@@ -2,7 +2,6 @@ import requests
 import pymongo
 import os
 import base64
-import sys
 import argparse
 
 from typing import TypedDict
@@ -10,9 +9,6 @@ from google import genai
 from utils import generate_desc, auto_tag
 from google.genai import types
 from dotenv import load_dotenv
-from pymongo.operations import SearchIndexModel
-
-
 
 class repo(TypedDict):
     name: str
@@ -21,7 +17,6 @@ class repo(TypedDict):
     topics: list[str]
     readme: str
     embedding: list[float]
-
 
 def fetch_public_repo_information(username: str, generate_embeddings=False, directory="") -> dict[str, repo]:
     repo_url = f"https://api.github.com/users/{username}/repos"
@@ -96,20 +91,17 @@ if __name__ == "__main__":
     parser.add_argument("embeddings", type=bool, help="Indicate whether you generate embeddings (requires Gemini API key in .env file)", default=False)
     parser.add_argument("mongo", type=bool, help="Indicate whether you want to push these documents to MongoDB (requires Mongo URI in .env file)", default=False)
     parser.add_argument("files", type=str, help="Indicate weather you want to save all the documents in a seperate folder", default="")
+    parser.add_argument("database", type=str, help="If uploading to MongoDB, specify a database", default="")
+    parser.add_argument("collection", type=str, help="If uploading to MongoDB, specify a collection", default="")
     args = parser.parse_args()
     
     load_dotenv()
 
     google_client = genai.Client(api_key=os.getenv("GEMINI"))
 
-    uri = os.getenv("MONGODB_URI")
-    mongo_client = pymongo.MongoClient(uri, server_api=pymongo.server_api.ServerApi(
-    version="1", strict=False, deprecation_errors=True))
+    if args.mongo and (args.database == "" or args.collection == ""):
+        raise ValueError("You have opted to push your files to MongoDB. Please specify a collection and/or database to upload to.")
 
-    Prakharbase = mongo_client["Prakharbase"]
-    vector_database = Prakharbase["vector_database"]
-
-    GITHUB_USERNAME = "prakhargaming"
     GITHUB_TOKEN = os.getenv("REPO")
 
     headers = {
@@ -120,5 +112,11 @@ if __name__ == "__main__":
     repos = fetch_public_repo_information(username=args.username, 
                                           generate_embeddings=args.embeddings, 
                                           generate_files=args.files)
-    if args.mongo:
+    if args.mongo:    
+        uri = os.getenv("MONGODB_URI")
+        mongo_client = pymongo.MongoClient(uri, server_api=pymongo.server_api.ServerApi(
+        version="1", strict=False, deprecation_errors=True))
+
+        Prakharbase = mongo_client[args.database]
+        vector_database = Prakharbase[args.collection]
         vector_database.insert_many(repos)

@@ -1,11 +1,3 @@
-import pymongo
-import os
-
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
-from pymongo.collection import Collection
-
 def auto_tag(readme_text, languages) -> list[str]:
     tags = []
 
