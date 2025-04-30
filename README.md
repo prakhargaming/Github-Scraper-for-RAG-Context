@@ -21,3 +21,7 @@ You need to create a `.env` File: Once you clone the repo, you need to create a 
        embedding: list[float]
 3. Additionally, if the user opts to create embeddings, a request is sent to Google's Gemini API to generate an embedding with their `"text-embedding-004"` model.
 4. Finally, all documents are pushed to MongoDB according to the schema outlined earlier.
+
+## How to Use
+```bash
+python3 github_context.py your-github-username --embeddings --mongo --database myDB --collection myCollection --save-files --files-dir ./output
