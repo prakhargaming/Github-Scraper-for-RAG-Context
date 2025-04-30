@@ -1,3 +1,4 @@
 .env
 github_repos_info/
 Database/
+__pycache__/

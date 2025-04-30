@@ -18,7 +18,15 @@ class repo(TypedDict):
     readme: str
     embedding: list[float]
 
-def fetch_public_repo_information(username: str, generate_embeddings=False, directory="") -> dict[str, repo]:
+def fetch_public_repo_information(username: str, generate_embeddings=False, directory="") -> list[repo]:
+    if args.embeddings:
+        google_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+    headers = {
+        "Authorization": f"token {os.getenv('GITHUB_PERSONAL_ACCESS_TOKEN')}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
     repo_url = f"https://api.github.com/users/{username}/repos"
     request_repo = requests.get(repo_url, headers=headers)
     if request_repo.status_code != 200:
@@ -26,7 +34,7 @@ def fetch_public_repo_information(username: str, generate_embeddings=False, dire
         return request_repo.status_code
     data = request_repo.json()
     repo_info = []
-    if directory != "":
+    if directory:
         os.makedirs(directory, exist_ok=True)
     for repos in data:
         repo_name = repos["name"]
@@ -63,10 +71,10 @@ def fetch_public_repo_information(username: str, generate_embeddings=False, dire
             repo_embedding = []
 
         if directory != "":
-            file_path = f"github_repos_info\\REPO_INFO_{repo_name}.txt"
+            file_path = os.path.join(directory, f"REPO_INFO_{repo_name}.txt")
             file_contents = generate_desc(repo_name, repo_url, repo_languages, repo_tags, repo_readme)
             try:
-                with open(file_path, "w") as file:
+                with open(file_path, "w", encoding="utf-8") as file:
                     file.write(file_contents)
                 print(f"File '{file_path}' created successfully.")
             except Exception as e:
@@ -77,7 +85,7 @@ def fetch_public_repo_information(username: str, generate_embeddings=False, dire
                 name=repo_name,
                 url=repo_url,
                 languages=repo_languages,
-                topics=auto_tag(repo_readme, repo_languages),
+                topics=repo_tags,
                 readme=repo_readme,
                 embedding=repo_embedding
             )
@@ -85,38 +93,35 @@ def fetch_public_repo_information(username: str, generate_embeddings=False, dire
 
     return repo_info
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("username", type=str, help="Enter your Github Username")
-    parser.add_argument("embeddings", type=bool, help="Indicate whether you generate embeddings (requires Gemini API key in .env file)", default=False)
-    parser.add_argument("mongo", type=bool, help="Indicate whether you want to push these documents to MongoDB (requires Mongo URI in .env file)", default=False)
-    parser.add_argument("files", type=str, help="Indicate weather you want to save all the documents in a seperate folder", default="")
-    parser.add_argument("database", type=str, help="If uploading to MongoDB, specify a database", default="")
-    parser.add_argument("collection", type=str, help="If uploading to MongoDB, specify a collection", default="")
+
+    parser.add_argument("username", type=str, help="Enter your GitHub Username")
+    parser.add_argument("--embeddings", action="store_true", help="Generate embeddings (requires GEMINI API key)")
+    parser.add_argument("--mongo", action="store_true", help="Push to MongoDB (requires MONGO URI)")
+    parser.add_argument("--save-files", action="store_true", help="Save documents to local folder")
+    parser.add_argument("--files-dir", type=str, default="./output", help="Directory to save files")
+    parser.add_argument("--database", type=str, help="MongoDB database name (required if --mongo is set)")
+    parser.add_argument("--collection", type=str, help="MongoDB collection name (required if --mongo is set)")
+
     args = parser.parse_args()
-    
     load_dotenv()
 
-    google_client = genai.Client(api_key=os.getenv("GEMINI"))
+    if args.mongo and (not args.database or not args.collection):
+        raise ValueError("You used --mongo but did not specify --database and/or --collection.")
 
-    if args.mongo and (args.database == "" or args.collection == ""):
-        raise ValueError("You have opted to push your files to MongoDB. Please specify a collection and/or database to upload to.")
+    repos = fetch_public_repo_information(
+        username=args.username,
+        generate_embeddings=args.embeddings,
+        directory=args.files_dir if args.save_files else ""
+    )
 
-    GITHUB_TOKEN = os.getenv("REPO")
-
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-
-    repos = fetch_public_repo_information(username=args.username, 
-                                          generate_embeddings=args.embeddings, 
-                                          generate_files=args.files)
-    if args.mongo:    
+    if args.mongo:
         uri = os.getenv("MONGODB_URI")
         mongo_client = pymongo.MongoClient(uri, server_api=pymongo.server_api.ServerApi(
-        version="1", strict=False, deprecation_errors=True))
-
-        Prakharbase = mongo_client[args.database]
-        vector_database = Prakharbase[args.collection]
-        vector_database.insert_many(repos)
+            version="1", strict=False, deprecation_errors=True
+        ))
+        database = mongo_client[args.database]
+        collection = database[args.collection]
+        collection.insert_many(repos)
